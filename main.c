@@ -1,4 +1,4 @@
-#include <proc/p32mx320f128h.h>
+#include <pic32mx.h>
 
 void delay(int cyc) {
 	int i;
@@ -7,10 +7,12 @@ void delay(int cyc) {
 
 int calculate_baudrate_divider(int sysclk, int baudrate, int highspeed) {
 	int pbclk, uxbrg, divmult;
+	unsigned int pbdiv;
 	
 	divmult = (highspeed) ? 4 : 16;
 	/* Periphial Bus Clock is divided by PBDIV in OSCCON */
-	pbclk = sysclk >> (OSCCONbits.PBDIV);
+	pbdiv = (OSCCON & 0x180000) >> 19;
+	pbclk = sysclk >> pbdiv;
 	
 	/* Multiply by two, this way we can round the divider up if needed */
 	uxbrg = ((pbclk * 2) / (divmult * baudrate)) - 2;
@@ -25,7 +27,8 @@ int calculate_baudrate_divider(int sysclk, int baudrate, int highspeed) {
 void init() {
 	/* On Uno32, we're assuming we're running with sysclk == 80 MHz */
 	/* Periphial bust can run at a maximum of 40 MHz, setting PBDIV to 1 divides sysclk with 2 */
-	OSCCONbits.PBDIV = 1;
+	OSCCON &= ~0x180000;
+	OSCCON |= 0x080000;
 }
 
 int main(void) {
@@ -37,19 +40,19 @@ int main(void) {
 	init();
 	
 	/* Configure UART1 for 115200 baud, no interrupts */
-	U1BRG = calculate_baudrate_divider(80000000, 115200, U1MODEbits.BRGH);
+	U1BRG = calculate_baudrate_divider(80000000, 115200, 0);
 	U1STA = 0;
 	/* 8-bit data, no parity, 1 stop bit */
 	U1MODE = 0x8000;
 	/* Enable transmit and recieve */
-	U1STASET = 0x1400;
+	U1STASET = 0x1400;	
 
 	for (;;) {
-		while (!U1STAbits.URXDA);
+		while(!(U1STA & 0x1)); //wait for read buffer to have a value
 		tmp = U1RXREG & 0xFF;
+		while(U1STA & (1 << 9)); //make sure the write buffer is not full 
 		U1TXREG = tmp;
 		PORTE = tmp;
-		//U1TXREG = 'U';
 	}
 
 	return 0;
